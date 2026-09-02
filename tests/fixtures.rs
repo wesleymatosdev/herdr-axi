@@ -68,11 +68,20 @@ fn fleet_all_states_ordering() {
 
 #[test]
 fn error_mapping() {
+    // real herdr 0.8.2 shapes (nested code + flat string) both map
     assert_eq!(
-        parse_error(r#"{"error":"agent_blocked"}"#),
+        parse_error(
+            r#"{"error":{"code":"agent_blocked","message":"agent x is blocked and requires interactive input"},"id":"cli:agent:prompt"}"#
+        ),
         HerdrError::Blocked
     );
-    assert_eq!(parse_error(r#"{"error":"agent_blocked"}"#).exit_code(), 3);
+    assert_eq!(
+        parse_error(
+            r#"{"error":{"code":"agent_blocked","message":"blocked"},"id":"cli:agent:prompt"}"#
+        )
+        .exit_code(),
+        3
+    );
     assert_eq!(
         parse_error(r#"{"error":"agent_prompt_stalled"}"#),
         HerdrError::Stalled
@@ -82,10 +91,18 @@ fn error_mapping() {
         4
     );
     assert_eq!(
-        parse_error(r#"{"error":"agent_not_found"}"#),
+        parse_error(
+            r#"{"error":{"code":"agent_not_found","message":"agent target no-such-agent not found"},"id":"cli:agent:prompt"}"#
+        ),
         HerdrError::UnknownAgent
     );
-    assert_eq!(parse_error(r#"{"error":"agent_not_found"}"#).exit_code(), 2);
+    assert_eq!(
+        parse_error(
+            r#"{"error":{"code":"agent_not_found","message":"not found"},"id":"cli:agent:prompt"}"#
+        )
+        .exit_code(),
+        2
+    );
     assert_eq!(
         parse_error("plain text failure"),
         HerdrError::Other("plain text failure".into())

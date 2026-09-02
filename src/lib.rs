@@ -98,18 +98,29 @@ pub fn parse_agent_list(stdout: &str) -> Vec<Agent> {
 }
 
 /// Parse an error out of herdr's JSON failure response (or raw text fallback).
+/// Accepts both shapes: `{"error":"agent_blocked"}` and
+/// `{"error":{"code":"agent_not_found","message":"..."}}`.
 pub fn parse_error(stdout: &str) -> HerdrError {
-    let v: serde_json::Value = match serde_json::from_str(stdout) {
+    let trimmed = stdout.trim();
+    let v: serde_json::Value = match serde_json::from_str(trimmed) {
         Ok(v) => v,
-        Err(_) => return HerdrError::Other(stdout.trim().to_string()),
+        Err(_) => return HerdrError::Other(trimmed.to_string()),
     };
-    let err = v.get("error").and_then(|e| e.as_str()).unwrap_or_default();
-    match err {
+    let err = match v.get("error") {
+        Some(serde_json::Value::String(s)) => s.clone(),
+        Some(obj) => obj
+            .get("code")
+            .and_then(|c| c.as_str())
+            .unwrap_or_default()
+            .to_string(),
+        None => String::new(),
+    };
+    match err.as_str() {
         "agent_blocked" => HerdrError::Blocked,
         "agent_prompt_stalled" => HerdrError::Stalled,
         "agent_not_found" | "unknown_agent" => HerdrError::UnknownAgent,
         "timeout" => HerdrError::Timeout,
-        _ => HerdrError::Other(stdout.trim().to_string()),
+        _ => HerdrError::Other(trimmed.to_string()),
     }
 }
 
@@ -188,32 +199,96 @@ pub fn live_agents() -> Result<Vec<Agent>, HerdrError> {
         .args(["agent", "list"])
         .output()
         .map_err(|e| HerdrError::Other(format!("failed to spawn herdr: {e}")))?;
-    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stdout = String::from_utf8_lossy(&out.stdout).to_string();
     if !out.status.success() {
-        return Err(parse_error(&String::from_utf8_lossy(&out.stdout)));
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+        return Err(parse_error(&format!("{stdout}{stderr}")));
     }
     Ok(parse_agent_list(&stdout))
 }
 
-/// Submit a prompt via `herdr agent prompt --wait`.
+/// Submit a task to an agent using firstmate's verified-submit dance
+/// (bin/backends/herdr.sh: fm_backend_herdr_send_text_submit):
+/// type once via `pane send-text` (never retyped), then retry `pane
+/// send-keys enter` (Enter only) until the agent's native state leaves idle
+/// (idle -> working transition = the TUI accepted the submission), then wait
+/// for the settled state via `agent wait`. A blocked agent is refused
+/// up-front, mirroring herdr's own agent_blocked pre-check.
 pub fn dispatch(name: &str, task: &str, timeout_ms: u64) -> Result<String, HerdrError> {
+    let agents = live_agents()?;
+    let agent = agents
+        .iter()
+        .find(|a| a.name == name)
+        .ok_or(HerdrError::UnknownAgent)?;
+    let pane = agent.pane_id.clone();
+
+    // blocked agents self-heal: one Escape dismisses the dialog (firstmate's
+    // composer-clear move); only a still-blocked agent surfaces as an error.
+    if agent.agent_status == "blocked" {
+        run_herdr(&["pane", "send-keys", &pane, "escape"])?;
+        std::thread::sleep(std::time::Duration::from_millis(1500));
+        let still_blocked = live_agents()?.iter().any(|a| {
+            a.name == name && (a.agent_status == "blocked" || a.agent_status == "unknown")
+        });
+        if still_blocked {
+            return Err(HerdrError::Blocked);
+        }
+    }
+
+    // 1. type the text once, unsubmitted
+    run_herdr(&["pane", "send-text", &pane, task])?;
+
+    // 2. settle so completion popups / TUI redraws cannot swallow the Enter
+    std::thread::sleep(std::time::Duration::from_millis(400));
+
+    // 3. retry Enter only, watching for the idle -> working transition
+    let mut accepted = agent.agent_status == "working";
+    for _ in 0..3 {
+        run_herdr(&["pane", "send-keys", &pane, "enter"])?;
+        if wait_for_working(name, 5_000)? {
+            accepted = true;
+            break;
+        }
+    }
+    if !accepted {
+        return Err(HerdrError::Stalled);
+    }
+
+    // 4. wait for the settled state (herdr default: idle, done, or blocked)
+    wait(name, None, Some(timeout_ms))
+}
+
+/// Run a herdr subcommand, mapping failure through parse_error.
+fn run_herdr(args: &[&str]) -> Result<String, HerdrError> {
     let out = Command::new(herdr_path())
-        .args([
-            "agent",
-            "prompt",
-            name,
-            task,
-            "--wait",
-            "--timeout",
-            &timeout_ms.to_string(),
-        ])
+        .args(args)
         .output()
         .map_err(|e| HerdrError::Other(format!("failed to spawn herdr: {e}")))?;
-    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stdout = String::from_utf8_lossy(&out.stdout).to_string();
     if !out.status.success() {
-        return Err(parse_error(&String::from_utf8_lossy(&out.stdout)));
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+        return Err(parse_error(&format!("{stdout}{stderr}")));
     }
-    Ok(stdout.trim().to_string())
+    Ok(stdout)
+}
+
+/// Poll agent state until `name` reports working (submission accepted).
+/// Samples ~every 300ms across the budget; a transition landing partway
+/// through is still caught (firstmate's wait_for_working pattern).
+fn wait_for_working(name: &str, budget_ms: u64) -> Result<bool, HerdrError> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(budget_ms);
+    while std::time::Instant::now() < deadline {
+        if let Ok(agents) = live_agents() {
+            let working = agents
+                .iter()
+                .any(|a| a.name == name && a.agent_status == "working");
+            if working {
+                return Ok(true);
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(300));
+    }
+    Ok(false)
 }
 
 /// Wait for an agent to reach a state via `herdr agent wait`.
@@ -236,9 +311,10 @@ pub fn wait(
         .args(&args)
         .output()
         .map_err(|e| HerdrError::Other(format!("failed to spawn herdr: {e}")))?;
-    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stdout = String::from_utf8_lossy(&out.stdout).to_string();
     if !out.status.success() {
-        return Err(parse_error(&String::from_utf8_lossy(&out.stdout)));
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+        return Err(parse_error(&format!("{stdout}{stderr}")));
     }
     Ok(stdout.trim().to_string())
 }
