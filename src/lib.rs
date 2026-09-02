@@ -186,6 +186,21 @@ pub fn format_fleet(agents: &[Agent]) -> String {
 /// Where the herdr binary lives.
 pub const HERDR_BIN: &str = "~/.local/bin/herdr";
 
+/// Return the menu choice for a one-time Codex onboarding prompt, if present.
+/// Directory trust is accepted, while hooks are deliberately left untrusted.
+pub fn codex_onboarding_choice(pane_content: &str) -> Option<&'static str> {
+    let content = pane_content.to_ascii_lowercase();
+    if content.contains("trust this directory")
+        || content.contains("trust the contents of this directory")
+    {
+        Some("1")
+    } else if content.contains("continue without trusting hooks") {
+        Some("3")
+    } else {
+        None
+    }
+}
+
 fn herdr_path() -> String {
     if let Ok(home) = std::env::var("HOME") {
         return format!("{home}/.local/bin/herdr");
@@ -222,6 +237,17 @@ pub fn dispatch(name: &str, task: &str, timeout_ms: u64) -> Result<String, Herdr
         .ok_or(HerdrError::UnknownAgent)?;
     let pane = agent.pane_id.clone();
 
+    if agent.agent == "codex" {
+        clear_codex_onboarding(&pane)?;
+    }
+
+    // Onboarding changes the native state reported by herdr.
+    let agents = live_agents()?;
+    let agent = agents
+        .iter()
+        .find(|a| a.name == name)
+        .ok_or(HerdrError::UnknownAgent)?;
+
     // blocked agents self-heal: one Escape dismisses the dialog (firstmate's
     // composer-clear move); only a still-blocked agent surfaces as an error.
     if agent.agent_status == "blocked" {
@@ -256,6 +282,28 @@ pub fn dispatch(name: &str, task: &str, timeout_ms: u64) -> Result<String, Herdr
 
     // 4. wait for the settled state (herdr default: idle, done, or blocked)
     wait(name, None, Some(timeout_ms))
+}
+
+/// Clear Codex's one-time onboarding chain before normal dispatch. The cap
+/// prevents an unexpected pane from causing an unbounded interaction loop.
+fn clear_codex_onboarding(pane: &str) -> Result<(), HerdrError> {
+    for _ in 0..5 {
+        let content = run_herdr(&[
+            "pane",
+            "read",
+            pane,
+            "--source",
+            "detection",
+            "--format",
+            "text",
+        ])?;
+        let Some(choice) = codex_onboarding_choice(&content) else {
+            break;
+        };
+        run_herdr(&["pane", "send-keys", pane, choice, "enter"])?;
+        std::thread::sleep(std::time::Duration::from_millis(400));
+    }
+    Ok(())
 }
 
 /// Run a herdr subcommand, mapping failure through parse_error.

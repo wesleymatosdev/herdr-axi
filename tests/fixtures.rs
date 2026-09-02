@@ -7,6 +7,21 @@ use herdr_axi::*;
 /// (names/statuses kept, two agents incl. one blocked).
 const AGENT_LIST_FIXTURE: &str = r#"{"id":"cli:agent:list","result":{"agents":[{"agent":"codex","agent_status":"idle","cwd":"/tmp/x","focused":false,"foreground_cwd":"/tmp/x","interactive_ready":true,"name":"fixbuild","pane_id":"w6:p4","revision":0,"state_change_seq":36,"tab_id":"w6:t1","terminal_id":"term_a","workspace_id":"w6"},{"agent":"claude","agent_status":"blocked","cwd":"/tmp/y","focused":false,"foreground_cwd":"/tmp/y","interactive_ready":true,"name":"spike-vec","pane_id":"w6:p3","revision":2,"state_change_seq":26,"tab_id":"w6:t2","terminal_id":"term_b","terminal_title":"x","terminal_title_stripped":"x","workspace_id":"w6"}]},"type":"agent_list"}"#;
 
+const CODEX_DIRECTORY_TRUST_FIXTURE: &str = r#"
+Do you trust the contents of this directory?
+
+  1. Yes, continue
+  2. No, exit
+"#;
+
+const CODEX_HOOKS_REVIEW_FIXTURE: &str = r#"
+Hooks review
+
+  1. Trust hooks and continue
+  2. Review hooks
+  3. Continue without trusting hooks
+"#;
+
 #[test]
 fn parses_agent_list_fixture() {
     let agents = parse_agent_list(AGENT_LIST_FIXTURE);
@@ -16,6 +31,19 @@ fn parses_agent_list_fixture() {
     assert_eq!(agents[0].pane_id, "w6:p4");
     assert_eq!(agents[0].agent_status, "idle");
     assert_eq!(agents[1].agent_status, "blocked");
+}
+
+#[test]
+fn detects_codex_onboarding_prompts() {
+    assert_eq!(
+        codex_onboarding_choice(CODEX_DIRECTORY_TRUST_FIXTURE),
+        Some("1")
+    );
+    assert_eq!(
+        codex_onboarding_choice(CODEX_HOOKS_REVIEW_FIXTURE),
+        Some("3")
+    );
+    assert_eq!(codex_onboarding_choice("codex is ready for a task"), None);
 }
 
 #[test]
