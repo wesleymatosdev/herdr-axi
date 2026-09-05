@@ -1,0 +1,9 @@
+[package]
+name = "herdr"
+version.workspace = true
+edition.workspace = true
+description = "herdr multiplexer Backend impl: process spawning + herdr-JSON -> AxiError translation"
+
+[dependencies]
+axi_core.workspace = true
+serde_json.workspace = true
