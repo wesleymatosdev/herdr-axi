@@ -1,5 +1,34 @@
 # BRIEF: extract axi-core (herdr-axi refactor)
 
+## Status: DONE (2026-09-05)
+
+Completed after a local OpenCode worker left the repo broken (stubs only,
+no `fn main`, cargo check E0601). Its dirty diff + untracked `crates/` are
+preserved verbatim on branch `recovery/opencode-wip-20260905` (commit
+`4ec6b80`) — see `recovery-evidence/20260905/README.md`. Recovery work
+restarted from the untouched original HEAD (`e03a428`) and re-did the
+extraction for real. See `REFACTOR-REPORT-20260905.md` for commits, test
+output, and CLI compatibility proof.
+
+Final shape (matches the plan below exactly):
+- `crates/axi_core`: `Agent`, `AxiError` (renamed from `HerdrError` per the
+  brief's own framing — "AxiError: THE error contract of the crate"),
+  `Backend` trait, `format_agents_table`/`format_fleet`/`fleet_counts`,
+  `codex_onboarding_choice`, and the generic `dispatch()` orchestration
+  (type-once, settle, Enter-retry, blocked self-heal) written against
+  `Backend`.
+- `crates/herdr`: `HerdrBackend` (impl of `Backend`), `parse_agent_list`,
+  `parse_error` (herdr wire-shape -> `AxiError` translation), `herdr_path()`,
+  process spawning. Named `herdr` (crate id), package renders as `herdr`
+  in Cargo.toml — brief said "crates/herdr" without an `_impl` suffix in
+  its own module numbering (item 2), so the crate keeps that name.
+- `crates/cli`: unchanged clap surface, bin name `herdr-axi`.
+
+All 8 pre-refactor tests preserved (split axi_core::tests/core.rs [3] +
+herdr::tests/fixtures.rs [5]); gate said "7 existing", actual original
+count was 8 — noted as a brief inaccuracy, not a regression.
+
+
 You are working in /Users/wesleymatos/projects/personal/herdr-axi
 (git repo, HEAD bd16a44, Rust 2024 edition, edition-2024 toolchain required).
 Work directly on the current branch. NEVER push.
