@@ -53,6 +53,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "axi_core"
+version = "0.1.0"
+
+[[package]]
 name = "clap"
 version = "4.6.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -105,10 +109,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
+name = "herdr"
+version = "0.1.0"
+dependencies = [
+ "axi_core",
+ "serde_json",
+]
+
+[[package]]
 name = "herdr-axi"
 version = "0.1.0"
 dependencies = [
+ "axi_core",
  "clap",
+ "herdr",
  "serde_json",
 ]
 

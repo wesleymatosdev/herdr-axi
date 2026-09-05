@@ -1,0 +1,7 @@
+[package]
+name = "axi_core"
+version.workspace = true
+edition.workspace = true
+description = "Backend-agnostic core: Agent model, AxiError contract, formatting, dispatch orchestration"
+
+[dependencies]

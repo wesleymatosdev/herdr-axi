@@ -1,17 +1,22 @@
-[package]
-name = "herdr-axi"
+[workspace]
+resolver = "2"
+members = [
+    "crates/axi_core",
+    "crates/herdr",
+    "crates/cli",
+]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
 description = "AXI-discipline wrapper around the herdr multiplexer CLI"
 
-[dependencies]
+[workspace.dependencies]
 clap = { version = "4", features = ["derive"] }
 serde_json = "1"
+axi_core = { path = "crates/axi_core", version = "0.1.0" }
+herdr = { path = "crates/herdr", version = "0.1.0" }
 
-[lib]
-name = "herdr_axi"
-path = "src/lib.rs"
-
-[[bin]]
-name = "herdr-axi"
-path = "src/main.rs"
+[profile.dev]
+# keep herdr round-trips fast while iterating on backend I/O
+opt-level = 0
