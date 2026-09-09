@@ -29,7 +29,7 @@ herdr::tests/fixtures.rs [5]); gate said "7 existing", actual original
 count was 8 — noted as a brief inaccuracy, not a regression.
 
 
-You are working in /Users/wesleymatos/projects/personal/herdr-axi
+You are working in ~/project
 (git repo, HEAD bd16a44, Rust 2024 edition, edition-2024 toolchain required).
 Work directly on the current branch. NEVER push.
 
